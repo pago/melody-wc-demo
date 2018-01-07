@@ -1,46 +1,33 @@
-import template from './index.twig';
-import { patchInner } from 'melody-idom';
+import render from './index.twig';
+import { createElement } from '../api/melody-ce';
+import { Observable } from 'rxjs/Observable';
+import 'rxjs/add/observable/fromEvent';
+import 'rxjs/add/operator/mapTo';
 
-const attachEvent = (eventName, handler) => el => {
-  el.addEventListener(eventName, handler);
-  return {
-    unsubscribe() {
-      el.removeEventListener(eventName, handler);
+export default createElement({
+  tagName: 'x-counter',
+  render,
+  props: ['count'],
+  initialState: {
+    count: 0
+  },
+  refs: component => ({
+    incrementButton: el => Observable.fromEvent(el, 'click').mapTo({ type: 'INCREMENT' }).subscribe(component.dispatch),
+    decrementButton: el => Observable.fromEvent(el, 'click').mapTo({ type: 'DECREMENT' }).subscribe(component.dispatch)
+  }),
+  reducer(state, action) {
+    switch (action.type) {
+      case 'PROPERTY_CHANGED':
+        const { name, value, oldValue } = action.payload;
+        if (name === 'count' && value === 0) {
+          return { count: value };
+        }
+        return state;
+      case 'INCREMENT':
+        return { count: state.count + 1 };
+      case 'DECREMENT':
+        return { count: state.count - 1 };
     }
+    return state;
   }
-};
-
-class CounterElement extends HTMLElement {
-  static get observedAttributes() {
-    return ['count'];
-  }
-  constructor() {
-    super();
-    this.attachShadow({mode: 'open'});
-    this.incrementButton = attachEvent('click', event => {
-      this.count++;
-    });
-    this.decrementButton = attachEvent('click', event => {
-      this.count--;
-    });
-    this._count = 0;
-  }
-  attributeChangedCallback(attributeName, oldValue, newValue, namespace) {
-    console.log(attributeName, oldValue, newValue, namespace);
-    this.update();
-  }
-  get count() {
-    return this._count;
-  }
-  set count(value) {
-    this._count = value;
-    this.update();
-  }
-  connectedCallback() {
-    this.update();
-  }
-  update() {
-    patchInner(this.shadowRoot, template, this);
-  }
-}
-customElements.define('x-counter', CounterElement);
+});
