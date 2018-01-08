@@ -1,14 +1,70 @@
 import { enqueueComponent, patchInner } from 'melody-idom';
 import { createStore, applyMiddleware } from 'redux';
-import { createEpicMiddleware } from 'redux-observable';
+import { createEpicMiddleware } from './epics';
 import { Observable } from 'rxjs/Observable';
 import 'rxjs/add/observable/from';
+import 'rxjs/add/observable/merge';
 import 'rxjs/add/operator/distinctUntilChanged';
+import 'rxjs/add/operator/map';
 
 // base class to extend, same trick as before
 export class HTMLCustomElement extends HTMLElement {
     constructor(_) { return (_ = super(_)).init(), _; }
     init() { /* override as you like */ }
+}
+
+const defineProperty = element => name => {
+    Object.defineProperty(element, name, {
+        set(value) {
+            const oldValue = element.props[name];
+            if (oldValue === value) {
+                return value;
+            }
+            element.props[name] = value;
+            element.dispatch({
+                type: 'PROPERTY_CHANGED',
+                payload: {
+                    name,
+                    oldValue,
+                    value
+                },
+                meta: {
+                    source: 'property'
+                }
+            });
+            return value;
+        },
+        get() {
+            return element.props[name];
+        }
+    });
+};
+
+const createEventSubscriber = (def, target) => {
+    return el => {
+        const subscribers = Object.keys(def).map(
+            eventName => {
+                const handler = def[eventName];
+                return Observable.fromEvent(el, eventName).map(
+                    typeof handler === 'function'
+                        ? handler
+                        : () => handler
+                );
+            }
+        );
+        return Observable.merge(...subscribers).subscribe(action => target.dispatch(action));
+    };
+};
+
+const mapRefs = (refs, element) => {
+    const r = typeof refs === 'object' ? refs : refs(element);
+    return Object.keys(r).reduce((refs, refName) => {
+        const val = r[refName];
+        refs[refName] = typeof val === 'function'
+            ? el => val(el).subscribe(action => element.dispatch(action))
+            : createEventSubscriber(val, element);
+        return refs;
+    }, {});
 }
 
 const defaultReducer = (state, action) => {
@@ -38,61 +94,17 @@ export const createElement = ({
             ) : createStore(initReducer(initialState, reducer));
             this.dispatch = store.dispatch;
             this.getState = store.getState;
+            this.props = {};
 
-            props.forEach(prop => {
-                Object.defineProperty(this, prop, {
-                    set(value) {
-                        const oldValue = this.props[name];
-                        if (oldValue === value) {
-                            return value;
-                        }
-                        this.props[name] = value;
-                        this.dispatch({
-                            type: 'PROPERTY_CHANGED',
-                            payload: {
-                                name,
-                                oldValue,
-                                value
-                            },
-                            meta: {
-                                source: 'property'
-                            }
-                        });
-                        return value;
-                    },
-                    get() {
-                        return this.props[name];
-                    }
-                });
-            });
-            this.props = props.reduce(
-                (props, prop) => {
-                    props[prop] = this.getAttribute(prop);
-                    this.dispatch({
-                        // TODO: Should this really use the same action?
-                        type: 'PROPERTY_CHANGED',
-                        payload: {
-                            name: prop,
-                            oldValue: undefined,
-                            value: props[prop]
-                        },
-                        meta: {
-                            source: 'attribute'
-                        }
-                    });
-                    return props;
-                },
-                {}
-            );
+            props.forEach(defineProperty(this));
 
             Observable.from(store)
                 // TODO: follow current shallow-equals comparison
                 .distinctUntilChanged()
                 // TODO: Integrate with scheduler
-                .subscribe(() => this.render());
+                .subscribe(() => requestAnimationFrame(() => this.render()));
 
-            // TODO: Implement full feature
-            this.refs = refs(this);
+            this.refs = mapRefs(refs, this);
         }
 
         // Custom Elements API
@@ -110,37 +122,32 @@ export const createElement = ({
                     name,
                     oldValue,
                     value
+                },
+                meta: {
+                    source: 'attribute'
                 }
             });
         }
 
         connectedCallback() {
-            this.dispatch({
-                type: 'CONNECTED'
+            props.forEach(
+                prop => {
+                    if (this.hasAttribute(prop)) {
+                        this[prop] = this.getAttribute(prop);
+                    }
+                }
+            );
+            requestAnimationFrame(() => {
+                this.render();
+                this.dispatch({
+                    type: 'CONNECTED'
+                });
             });
-            this.render();
         }
 
         detachedCallback() {
             this.dispatch({
                 type: 'DETACHED'
-            });
-        }
-
-        // Melody Component API
-        get el() {
-            return this;
-        }
-
-        apply(props) {
-            Object.keys(props).forEach(name => {
-                this[name] = props[name];
-            });
-        }
-
-        notify() {
-            this.dispatch({
-                type: 'UPDATED'
             });
         }
 

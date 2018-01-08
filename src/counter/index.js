@@ -9,24 +9,27 @@ export default createElement({
   render,
   props: ['count'],
   initialState: {
-    count: 0
+    count: 0,
+    modified: false
   },
   refs: component => ({
-    incrementButton: el => Observable.fromEvent(el, 'click').mapTo({ type: 'INCREMENT' }).subscribe(component.dispatch),
-    decrementButton: el => Observable.fromEvent(el, 'click').mapTo({ type: 'DECREMENT' }).subscribe(component.dispatch)
+    incrementButton: el => Observable.fromEvent(el, 'click').mapTo({ type: 'INCREMENT' }),
+    decrementButton: {
+      click: { type: 'DECREMENT' }
+    }
   }),
   reducer(state, action) {
     switch (action.type) {
       case 'PROPERTY_CHANGED':
         const { name, value, oldValue } = action.payload;
-        if (name === 'count' && value === 0) {
-          return { count: value };
+        if (name === 'count' && !state.modified) {
+          return { count: +value };
         }
         return state;
       case 'INCREMENT':
-        return { count: state.count + 1 };
+        return { count: state.count + 1, modified: true };
       case 'DECREMENT':
-        return { count: state.count - 1 };
+        return { count: state.count - 1, modified: true };
     }
     return state;
   }

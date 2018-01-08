@@ -8,7 +8,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "start": "webpack-dev-server",
-    "build": "webpack --progress --colors --display-chunks"
+    "build": "webpack --progress --colors --display-chunks --display-optimization-bailout"
   },
   "devDependencies": {
     "babel-core": "^6.26.0",
@@ -18,7 +18,10 @@
     "webpack-dev-server": "^2.9.3"
   },
   "dependencies": {
+    "babel-plugin-lodash": "^3.3.2",
+    "babel-preset-env": "^1.6.1",
     "document-register-element": "^1.7.0",
+    "lodash-webpack-plugin": "^0.11.4",
     "melody-component": "^1.0.0",
     "melody-hoc": "^1.0.0",
     "melody-idom": "^1.0.0",
@@ -29,6 +32,7 @@
     "melody-types": "^1.0.0",
     "redux": "^3.7.2",
     "redux-observable": "^0.17.0",
-    "rxjs": "^5.5.6"
+    "rxjs": "^5.5.6",
+    "webpack-bundle-analyzer": "^2.9.2"
   }
 }

@@ -1,5 +1,7 @@
 var webpack = require('webpack');
 var path = require('path');
+var LodashModuleReplacementPlugin = require('lodash-webpack-plugin');
+var BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
 module.exports = {
     entry: {
@@ -9,6 +11,7 @@ module.exports = {
         path: path.join(__dirname, 'public'),
         filename: '[name].js'
     },
+    devtool: 'source-map',
     module: {
         rules: [
             {
@@ -16,7 +19,8 @@ module.exports = {
                 use: {
                     loader: 'babel-loader',
                     options: {
-                        plugins: [require('babel-plugin-transform-object-rest-spread')]
+                        presets: [['env', { targets: { ie: 11 }, modules: false }]],
+                        plugins: ['lodash', require('babel-plugin-transform-object-rest-spread')]
                     }
                 }
             },
@@ -34,6 +38,33 @@ module.exports = {
             },
         ]
     },
+    resolve: {
+        alias: {
+            lodash: 'lodash-es',
+        }
+    },
+    plugins: [
+        new webpack.DefinePlugin({
+            'process.env.NODE_ENV': '"production"',
+        }),
+        new LodashModuleReplacementPlugin(),
+        new webpack.optimize.UglifyJsPlugin({
+            sourceMap: true
+        }),
+        new webpack.optimize.ModuleConcatenationPlugin(),
+        new BundleAnalyzerPlugin()
+    ],
+    node: {
+        // Polyfills and mocks to run Node.js-
+        // environment code in non-Node environments.
+        console: false, // boolean | "mock"
+        global: false, // boolean | "mock"
+        process: false, // boolean
+        __filename: false, // boolean | "mock"
+        __dirname: false, // boolean | "mock"
+        Buffer: false, // boolean | "mock"
+        setImmediate: false // boolean | "mock" | "empty"
+      },
     devServer: {
       contentBase: path.join(__dirname, 'public'),
       watchOptions: {
