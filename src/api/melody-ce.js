@@ -19,156 +19,122 @@ export class HTMLCustomElement extends HTMLElement {
     }
 }
 
-const propChanged = (name, value, oldValue, source = 'property') => ({
-    type: 'PROPERTY_CHANGED',
-    payload: {
-        name,
-        oldValue,
-        value
-    },
-    meta: {
-        source
-    }
-});
-
-const refChanged = (name, element) => ({
-    type: 'REF_CHANGED',
-    payload: {
-        name,
-        element
-    }
-});
-
-const defineProperty = element => name => {
-    Object.defineProperty(element, name, {
-        set(value) {
-            const oldValue = element.props[name];
-            if (oldValue === value) {
+const defineProperty = (element, initialState, validators) => (state, name) => {
+    const value = initialState[name];
+    if (value === ref) {
+        state[name] = value(element, name);
+    } else {
+        state[name] = value;
+        Object.defineProperty(element, name, {
+            set(newValue) {
+                const oldValue = element.props[name];
+                const value = validators[name]
+                    ? validators[name](newValue, oldValue, element)
+                    : newValue;
+                if (oldValue === value) {
+                    return value;
+                }
+                element.props[name] = value;
+                element.dispatch({
+                    type: 'propertyChanged',
+                    payload: {
+                        name,
+                        oldValue,
+                        value
+                    }
+                });
                 return value;
+            },
+            get() {
+                return element.props[name];
             }
-            element.props[name] = value;
-            element.dispatch(propChanged(name, value, oldValue));
-            return value;
-        },
-        get() {
-            return element.props[name];
-        }
-    });
+        });
+    }
+    return state;
 };
 
-const createEventSubscriber = (refName, def, target) => {
-    return el => {
-        const subscribers = Object.keys(def).map(eventName => {
-            const handler = def[eventName];
-            return Observable.fromEvent(el, eventName).map(
-                typeof handler === 'function' ? handler : () => handler
-            );
-        });
-        return Observable.merge(...subscribers)
-            .startWith(refChanged(refName, el))
-            .subscribe(action => target.dispatch(action));
+export const ref = (component, name) => element => {
+    component.dispatch({
+        type: 'refChanged',
+        payload: {
+            name,
+            element
+        }
+    });
+    return {
+        unsubscribe() {
+            // do nothing, subscriptions handled with switchMap
+        }
     };
 };
 
-const mapRefs = (refs, element) => {
-    const r = typeof refs === 'object' ? refs : refs(element);
-    return Object.keys(r).reduce((refs, refName) => {
-        const val = r[refName];
-        refs[refName] =
-            typeof val === 'function'
-                ? el =>
-                      val(el)
-                          .startWith(refChanged(refName, element))
-                          .subscribe(action => element.dispatch(action))
-                : createEventSubscriber(refName, val, element);
-        return refs;
-    }, {});
-};
-
-const defaultReducer = (state, action) => {
-    if (action.type === 'PROPERTY_CHANGED') {
+const initReducer = (initialState, actions) => (
+    state = initialState,
+    action
+) => {
+    if (actions[action.type]) {
+        return actions[action.type](state, action);
+    } else if (action.type === 'propertyChanged') {
         return { ...state, [action.payload.name]: action.payload.value };
     }
     return state;
 };
 
-const initReducer = (initialState, reducer) => (state = initialState, action) =>
-    reducer(state, action);
-
 export const createElement = ({
     tagName,
-    props = [],
     initialState = {},
-    render,
-    reducer = defaultReducer,
-    refs = () => ({}),
-    epic
+    render = () => undefined,
+    epic,
+    actions = {},
+    validators = {}
 }) => {
     class MelodyElement extends HTMLCustomElement {
-        // Custom Element API
         init() {
+            this.props = {};
+            const initState = Object.keys(initialState).reduce(
+                defineProperty(this, initialState, validators),
+                {}
+            );
             const store = epic
                 ? createStore(
-                      initReducer(initialState, reducer),
+                      initReducer(initState, actions),
                       applyMiddleware(createEpicMiddleware(epic))
                   )
-                : createStore(initReducer(initialState, reducer));
+                : createStore(initReducer(initState, actions));
             this.dispatch = store.dispatch;
             this.getState = store.getState;
-            this.props = {};
-
-            props.forEach(defineProperty(this));
 
             Observable.from(store, animationFrame)
                 // TODO: follow current shallow-equals comparison
                 .distinctUntilChanged()
                 // TODO: Integrate with scheduler
                 .subscribe(() => this.render());
-
-            this.refs = mapRefs(refs, this);
         }
 
         // Custom Elements API
         static get observedAttributes() {
-            return props;
+            return Object.keys(initialState);
         }
 
         attributeChangedCallback(name, oldValue, value) {
-            if (oldValue === value) {
-                return;
-            }
-            this.dispatch(propChanged(name, value, oldValue, 'attribute'));
+            this[name] = validators[name](value, oldValue, this);
         }
 
         connectedCallback() {
-            props.forEach(prop => {
-                if (this.hasAttribute(prop)) {
-                    const value = this.getAttribute(prop);
-                    this.props[prop] = value;
-                    this.dispatch(
-                        propChanged(prop, value, undefined, 'attribute')
-                    );
-                }
-            });
+            this.dispatch({ type: 'connected', payload: this });
             requestAnimationFrame(() => {
                 this.render();
-                this.dispatch({
-                    type: 'CONNECTED',
-                    payload: this
-                });
             });
         }
 
         detachedCallback() {
-            this.dispatch({
-                type: 'DETACHED',
-                payload: this
-            });
+            this.dispatch({ type: 'detached', payload: this });
         }
 
         render() {
-            const state = { ...this.getState(), ...this.refs };
+            const state = this.getState();
             patchInner(this, () => render(state), state);
+            this.dispatch({ type: 'rendered', payload: this });
         }
     }
     if (tagName) {
