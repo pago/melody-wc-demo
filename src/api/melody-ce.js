@@ -27,14 +27,14 @@ const defineProperty = (element, initialState, validators) => (state, name) => {
         state[name] = value;
         Object.defineProperty(element, name, {
             set(newValue) {
-                const oldValue = element.props[name];
+                const oldValue = element[name];
                 const value = validators[name]
                     ? validators[name](newValue, oldValue, element)
                     : newValue;
                 if (oldValue === value) {
                     return value;
                 }
-                element.props[name] = value;
+                //element.props[name] = value;
                 element.dispatch({
                     type: 'propertyChanged',
                     payload: {
@@ -46,7 +46,7 @@ const defineProperty = (element, initialState, validators) => (state, name) => {
                 return value;
             },
             get() {
-                return element.props[name];
+                return element.getState()[name];
             }
         });
     }
