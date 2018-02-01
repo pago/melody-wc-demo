@@ -34,7 +34,6 @@ const defineProperty = (element, initialState, validators) => (state, name) => {
                 if (oldValue === value) {
                     return value;
                 }
-                //element.props[name] = value;
                 element.dispatch({
                     type: 'propertyChanged',
                     payload: {
