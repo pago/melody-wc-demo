@@ -1,48 +1,67 @@
-import { Subject } from 'rxjs/Subject';
-import 'rxjs/add/operator/map';
-import { ActionsObservable, EPIC_END } from 'redux-observable';
+import { fromEvent } from 'rxjs/observable/fromEvent';
+import { pipe } from 'rxjs/util/pipe';
+import {
+    tap,
+    filter,
+    map,
+    pluck,
+    switchMap,
+    ignoreElements
+} from 'rxjs/operators';
+import { combineEpics } from 'redux-observable';
 
-const defaultOptions = {};
+export const ofType = type => filter(action => action.type === type);
 
-export function createEpicMiddleware(rootEpic, options = defaultOptions) {
-  if (typeof rootEpic !== 'function') {
-    throw new TypeError('You must provide a root Epic to createEpicMiddleware');
-  }
+export const eventToActionStream = (eventName, handler) => element =>
+    map(handler)(fromEvent(element, eventName));
 
-  // even though we used default param, we need to merge the defaults
-  // inside the options object as well in case they declare only some
-  options = { ...defaultOptions, ...options };
-  const input$ = new Subject();
-  const action$ = new ActionsObservable(input$);
-  const epic$ = new Subject();
-  let store;
+export const eventHandler = (refName, eventName, handler) =>
+    pipe(
+        ofType('refChanged'),
+        filter(action => action.payload.name === refName),
+        pluck('payload', 'element'),
+        switchMap(eventToActionStream(eventName, handler))
+    );
 
-  const epicMiddleware = _store => {
-    store = _store;
+export const mapEventToAction = (refName, eventName, actionName) =>
+    eventHandler(refName, eventName, () => ({ type: actionName }));
 
-    return next => {
-        const output$ = ('dependencies' in options)
-            ? rootEpic(action$, store, options.dependencies)
-            : rootEpic(action$, store);
+export const effect = (actionType, handler) =>
+    pipe(ofType(actionType), tap(handler), ignoreElements());
 
-        if (!output$) {
-            throw new TypeError(`Your root Epic "${epic.name || '<anonymous>'}" does not return a stream. Double check you\'re not missing a return statement!`);
-        }
+export const compose = combineEpics;
 
-        output$.subscribe(action => {
-          try {
-            store.dispatch(action);
-          } catch (err) {
-            console.error(err);
-          }
-        });
+export const sideEffects = desc =>
+    compose(
+        ...Object.keys(desc).map(actionType =>
+            effect(actionType, desc[actionType])
+        )
+    );
 
-        return action => {
-            const result = next(action);
-            input$.next(action);
-            return result;
-        };
-    };
-  };
-  return epicMiddleware;
-}
+const createEventHandler = (handler, refName, eventName) =>
+    typeof handler === 'function'
+        ? eventHandler(refName, eventName, handler)
+        : typeof handler === 'string'
+          ? mapEventToAction(refName, eventName, handler)
+          : eventHandler(refName, eventName, () => handler);
+
+export const events = desc =>
+    compose(
+        ...Object.keys(desc).reduce((epics, refName) => {
+            const [realRefName, eventName] = refName.split(':');
+            if (realRefName !== refName) {
+                epics.push(
+                    createEventHandler(desc[refName], realRefName, eventName)
+                );
+                return epics;
+            }
+            const ref = desc[refName];
+            Object.keys(ref).reduce((epics, eventName) => {
+                epics.push(
+                    createEventHandler(ref[eventName], refName, eventName)
+                );
+                return epics;
+            }, epics);
+            return epics;
+        }, [])
+    );

@@ -1,13 +1,9 @@
 import { enqueueComponent, patchInner } from 'melody-idom';
 import { createStore, applyMiddleware } from 'redux';
 import { createEpicMiddleware } from 'redux-observable';
-import { Observable } from 'rxjs/Observable';
-import 'rxjs/add/observable/from';
-import 'rxjs/add/observable/merge';
-import 'rxjs/add/operator/distinctUntilChanged';
-import 'rxjs/add/operator/map';
-import 'rxjs/add/operator/startWith';
 import { animationFrame } from 'rxjs/scheduler/animationFrame.js';
+import { from } from 'rxjs/observable/from';
+import { distinctUntilChanged } from 'rxjs/operators';
 
 // base class to extend, same trick as before
 export class HTMLCustomElement extends HTMLElement {
@@ -72,9 +68,12 @@ const initReducer = (initialState, actions) => (
     action
 ) => {
     if (actions[action.type]) {
-        return actions[action.type](state, action);
+        return actions[action.type](state, action.payload);
     } else if (action.type === 'propertyChanged') {
-        return { ...state, [action.payload.name]: action.payload.value };
+        return {
+            ...state,
+            [action.payload.name]: action.payload.value
+        };
     }
     return state;
 };
@@ -82,8 +81,8 @@ const initReducer = (initialState, actions) => (
 export const createElement = ({
     tagName,
     initialState = {},
-    render = () => undefined,
-    epic,
+    render,
+    effects,
     actions = {},
     validators = {}
 }) => {
@@ -94,20 +93,22 @@ export const createElement = ({
                 defineProperty(this, initialState, validators),
                 {}
             );
-            const store = epic
+            const store = effects
                 ? createStore(
                       initReducer(initState, actions),
-                      applyMiddleware(createEpicMiddleware(epic))
+                      applyMiddleware(createEpicMiddleware(effects))
                   )
                 : createStore(initReducer(initState, actions));
             this.dispatch = store.dispatch;
             this.getState = store.getState;
 
-            Observable.from(store, animationFrame)
-                // TODO: follow current shallow-equals comparison
-                .distinctUntilChanged()
-                // TODO: Integrate with scheduler
-                .subscribe(() => this.render());
+            if (render) {
+                from(store, animationFrame)
+                    // TODO: follow current shallow-equals comparison
+                    .pipe(distinctUntilChanged())
+                    // TODO: Integrate with scheduler
+                    .subscribe(() => this.render());
+            }
         }
 
         // Custom Elements API
@@ -120,20 +121,31 @@ export const createElement = ({
         }
 
         connectedCallback() {
-            this.dispatch({ type: 'connected', payload: this });
+            this.dispatch({
+                type: 'connected',
+                payload: this
+            });
             requestAnimationFrame(() => {
                 this.render();
             });
         }
 
         detachedCallback() {
-            this.dispatch({ type: 'detached', payload: this });
+            this.dispatch({
+                type: 'detached',
+                payload: this
+            });
         }
 
         render() {
-            const state = this.getState();
-            patchInner(this, () => render(state), state);
-            this.dispatch({ type: 'rendered', payload: this });
+            if (render) {
+                const state = this.getState();
+                patchInner(this, () => render(state), state);
+                this.dispatch({
+                    type: 'rendered',
+                    payload: this
+                });
+            }
         }
     }
     if (tagName) {

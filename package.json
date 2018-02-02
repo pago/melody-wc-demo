@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "babel-plugin-lodash": "^3.3.2",
+    "babel-plugin-transform-imports": "^1.4.1",
     "babel-preset-env": "^1.6.1",
     "document-register-element": "^1.7.0",
     "lodash-webpack-plugin": "^0.11.4",

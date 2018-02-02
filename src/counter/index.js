@@ -1,37 +1,11 @@
 import render from './index.twig';
 import { createElement, ref } from '../api/melody-ce';
-import { Observable } from 'rxjs/Observable';
-import 'rxjs/add/observable/fromEvent';
-import 'rxjs/add/operator/do';
-import 'rxjs/add/operator/filter';
-import 'rxjs/add/operator/map';
-import 'rxjs/add/operator/pluck';
-import 'rxjs/add/operator/switchMap';
-import 'rxjs/add/operator/ignoreElements';
-import { combineEpics } from 'redux-observable';
-
-const eventHandler = (refName, eventName, handler) => actions =>
-    actions
-        .ofType('refChanged')
-        .filter(action => action.payload.name === refName)
-        .pluck('payload', 'element')
-        .switchMap(element =>
-            Observable.fromEvent(element, eventName).map(handler)
-        );
-
-const mapEventToAction = (refName, eventName, actionName) =>
-    eventHandler(refName, eventName, () => ({ type: actionName }));
-
-const effect = (actionType, handler) => actions =>
-    actions
-        .ofType(actionType)
-        .do(handler)
-        .ignoreElements();
+import { compose, events, sideEffects } from '../api/epics';
 
 export default createElement({
-    // The tag name is the name of the custom HTML element
+    // (optional) The tag name is the name of the custom HTML element
     tagName: 'x-counter',
-    // render is just a template
+    // (optional) render is just a template
     render,
     // Initial state is the top-level state object,
     // all of its properties can be modified as HTML element properties
@@ -55,17 +29,30 @@ export default createElement({
             if (state.modified) {
                 return state.value;
             }
-            return +value; // ensure number
+            // ensure number
+            return +value;
+        },
+        modified(value, oldValue, state) {
+            // disallow external modification for this property
+            return state.modified;
         }
     },
     // Side effects are handled through epics
-    epic: combineEpics(
-        eventHandler('incrementButton', 'click', event => ({
-            type: 'increment'
-        })),
-        mapEventToAction('decrementButton', 'click', 'decrement'),
-        effect('increment', _ => console.log('Counter incremented')),
-        effect('refChanged', _ => console.log('refChanged', _))
+    effects: compose(
+        events({
+            'decrementButton:click': 'decrement',
+            incrementButton: {
+                click: event => ({ type: 'increment' })
+            }
+        }),
+        sideEffects({
+            increment() {
+                console.log('Counter incremented');
+            },
+            refChanged(action) {
+                console.log('refChanged', action);
+            }
+        })
     ),
     // actions are reducers - they accept state and the payload property of the action
     // no need to access the actual action since the type is specified through the action key
