@@ -1,5 +1,5 @@
 <div class="counter">
-  <h3>Counter: {{ count }}</h3>
+  <h3>Counter: {{ count }}{{ modified ? ' *' : '' }}</h3>
   <button ref="{{ incrementButton }}"> + </button>
   <button ref="{{ decrementButton }}"> - </button>
 </div>

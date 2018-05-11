@@ -19,24 +19,6 @@ export default createElement({
         incrementButton: ref,
         decrementButton: ref
     },
-    // validators are executed whenever the state property of the same name
-    // is changed externally (but not internally)
-    // The value it returns is compared to the previous value to identify if it changed
-    // It must be a pure function.
-    validators: {
-        count(value, oldValue, state) {
-            // don't accept outside definition under some condition
-            if (state.modified) {
-                return state.value;
-            }
-            // ensure number
-            return +value;
-        },
-        modified(value, oldValue, state) {
-            // disallow external modification for this property
-            return state.modified;
-        }
-    },
     // Side effects are handled through epics
     effects: compose(
         events({
@@ -62,13 +44,15 @@ export default createElement({
         increment(state) {
             return {
                 ...state,
-                count: state.count + 1
+                count: state.count + 1,
+                modified: true
             };
         },
         decrement(state) {
             return {
                 ...state,
-                count: state.count - 1
+                count: state.count - 1,
+                modified: true
             };
         }
     }

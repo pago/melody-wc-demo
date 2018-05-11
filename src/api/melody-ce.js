@@ -5,7 +5,7 @@ import { animationFrame } from 'rxjs/scheduler/animationFrame.js';
 import { from } from 'rxjs/observable/from';
 import { distinctUntilChanged } from 'rxjs/operators';
 
-// base class to extend, same trick as before
+// base class to extend
 export class HTMLCustomElement extends HTMLElement {
     constructor(_) {
         return (_ = super(_)).init(), _;
@@ -15,18 +15,15 @@ export class HTMLCustomElement extends HTMLElement {
     }
 }
 
-const defineProperty = (element, initialState, validators) => (state, name) => {
+const defineProperty = (element, initialState) => (state, name) => {
     const value = initialState[name];
     if (value === ref) {
         state[name] = value(element, name);
     } else {
         state[name] = value;
         Object.defineProperty(element, name, {
-            set(newValue) {
+            set(value) {
                 const oldValue = element[name];
-                const value = validators[name]
-                    ? validators[name](newValue, oldValue, element)
-                    : newValue;
                 if (oldValue === value) {
                     return value;
                 }
@@ -58,7 +55,13 @@ export const ref = (component, name) => element => {
     });
     return {
         unsubscribe() {
-            // do nothing, subscriptions handled with switchMap
+            component.dispatch({
+                type: 'refRemoved',
+                payload: {
+                    name,
+                    element
+                }
+            });
         }
     };
 };
@@ -70,9 +73,12 @@ const initReducer = (initialState, actions) => (
     if (actions[action.type]) {
         return actions[action.type](state, action.payload);
     } else if (action.type === 'propertyChanged') {
+        const name = action.payload.name;
+        const value = action.payload.value;
+        const typeHint = typeof initialState[name];
         return {
             ...state,
-            [action.payload.name]: action.payload.value
+            [name]: typeHint === 'number' ? +value : value
         };
     }
     return state;
@@ -83,14 +89,12 @@ export const createElement = ({
     initialState = {},
     render,
     effects,
-    actions = {},
-    validators = {}
+    actions = {}
 }) => {
     class MelodyElement extends HTMLCustomElement {
         init() {
-            this.props = {};
             const initState = Object.keys(initialState).reduce(
-                defineProperty(this, initialState, validators),
+                defineProperty(this, initialState),
                 {}
             );
             const store = effects
@@ -113,12 +117,10 @@ export const createElement = ({
 
         // Custom Elements API
         static get observedAttributes() {
-            return Object.keys(initialState);
+            return [];
         }
 
-        attributeChangedCallback(name, oldValue, value) {
-            this[name] = validators[name](value, oldValue, this);
-        }
+        attributeChangedCallback(name, oldValue, value) {}
 
         connectedCallback() {
             this.dispatch({
@@ -146,6 +148,18 @@ export const createElement = ({
                     payload: this
                 });
             }
+            // reflect state to DOM
+            Object.keys(initialState).forEach(name => {
+                const value = this.getState()[name];
+                const valueType = typeof value;
+                if (valueType === 'string' || valueType === 'number') {
+                    this.setAttribute(name, value);
+                } else if (valueType === 'boolean' && value) {
+                    this.setAttribute(name, '');
+                } else if (!value) {
+                    this.removeAttribute(name);
+                }
+            });
         }
     }
     if (tagName) {
